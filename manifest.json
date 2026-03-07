@@ -33,5 +33,11 @@
       }
     ],
     "permissions": ["clipboardWrite", "activeTab", "tabs", "storage"],
-    "host_permissions": ["https://pathbuilder2e.com/*", "https://app.roll20.net/*"]
+    "host_permissions": ["https://pathbuilder2e.com/*", "https://app.roll20.net/*"],
+    "web_accessible_resources": [
+      {
+        "resources": ["roll20-initiative-bridge.js"],
+        "matches": ["https://app.roll20.net/*"]
+      }
+    ]
 }

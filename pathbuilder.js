@@ -89,16 +89,40 @@ document.addEventListener('click', function(e) {
         let initiativePayload;
 
         if (isInitiativeRoll) {
-            // Roll once here so the chat output and initiative tracker use the same value.
-            const parsedModifier = Number.parseInt(modifier, 10) || 0;
-            const d20 = Math.floor(Math.random() * 20) + 1;
-            const total = d20 + parsedModifier;
+            // Initiative in Pathbuilder is shown as Initiative + Perception.
+            // We combine both modifiers before rolling and sending to Roll20.
+            const initiativeModifierValue = Number.parseInt(modifier, 10) || 0;
 
-            rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[${total}]]}} {{modifier=${modifier}}} {{formula=1d20${modifier}}} {{d20=${d20}}}`;
+            const perceptionSkillElement = Array.from(document.querySelectorAll('.section-skill')).find((el) => {
+                const nameEl = el.querySelector('.section-skill-name');
+                return nameEl && nameEl.textContent.trim().toLowerCase() === 'perception';
+            });
+
+            let perceptionModifierText = perceptionSkillElement
+                ? (perceptionSkillElement.querySelector('.section-skill-total')?.textContent.trim() || '+0')
+                : '+0';
+
+            if (!perceptionModifierText.startsWith('+') && !perceptionModifierText.startsWith('-')) {
+                perceptionModifierText = `+${perceptionModifierText}`;
+            }
+
+            const perceptionModifierValue = Number.parseInt(perceptionModifierText, 10) || 0;
+            const combinedModifierValue = initiativeModifierValue + perceptionModifierValue;
+            const combinedModifierText = combinedModifierValue >= 0
+                ? `+${combinedModifierValue}`
+                : `${combinedModifierValue}`;
+
+            // Roll once here so the chat output and initiative tracker use the same value.
+            const d20 = Math.floor(Math.random() * 20) + 1;
+            const total = d20 + combinedModifierValue;
+
+            rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[${total}]]}} {{modifier=${combinedModifierText}}} {{initiative mod=${modifier}}} {{perception mod=${perceptionModifierText}}} {{formula=1d20${combinedModifierText}}} {{d20=${d20}}}`;
             initiativePayload = {
                 enabled: true,
                 characterName: charName,
-                modifier: modifier,
+                modifier: combinedModifierText,
+                initiativeModifier: modifier,
+                perceptionModifier: perceptionModifierText,
                 d20,
                 total
             };
