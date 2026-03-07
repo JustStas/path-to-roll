@@ -81,11 +81,64 @@ document.addEventListener('click', function(e) {
         console.log('Found character name:', charName);
         const skillName = skillNameElement.textContent.trim();
 
-        // Create the roll template string
-        const rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[1d20${modifier}]]}} {{modifier=${modifier}}}`;
+        // Initiative is a special case: if a matching token exists in Roll20,
+        // we'll also try to add the rolled result to the initiative tracker.
+        const isInitiativeRoll = skillName.toLowerCase() === 'initiative';
+
+        let rollString;
+        let initiativePayload;
+
+        if (isInitiativeRoll) {
+            // Initiative in Pathbuilder is shown as Initiative + Perception.
+            // We combine both modifiers before rolling and sending to Roll20.
+            const initiativeModifierValue = Number.parseInt(modifier, 10) || 0;
+
+            const perceptionSkillElement = Array.from(document.querySelectorAll('.section-skill')).find((el) => {
+                const nameEl = el.querySelector('.section-skill-name');
+                return nameEl && nameEl.textContent.trim().toLowerCase() === 'perception';
+            });
+
+            let perceptionModifierText = perceptionSkillElement
+                ? (perceptionSkillElement.querySelector('.section-skill-total')?.textContent.trim() || '+0')
+                : '+0';
+
+            if (!perceptionModifierText.startsWith('+') && !perceptionModifierText.startsWith('-')) {
+                perceptionModifierText = `+${perceptionModifierText}`;
+            }
+
+            const perceptionModifierValue = Number.parseInt(perceptionModifierText, 10) || 0;
+            const combinedModifierValue = initiativeModifierValue + perceptionModifierValue;
+            const combinedModifierText = combinedModifierValue >= 0
+                ? `+${combinedModifierValue}`
+                : `${combinedModifierValue}`;
+
+            // Roll once here so the chat output and initiative tracker use the same value.
+            const d20 = Math.floor(Math.random() * 20) + 1;
+            const total = d20 + combinedModifierValue;
+
+            rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[${total}]]}} {{modifier=${combinedModifierText}}} {{initiative mod=${modifier}}} {{perception mod=${perceptionModifierText}}} {{formula=1d20${combinedModifierText}}} {{d20=${d20}}}`;
+            initiativePayload = {
+                enabled: true,
+                characterName: charName,
+                modifier: combinedModifierText,
+                initiativeModifier: modifier,
+                perceptionModifier: perceptionModifierText,
+                d20,
+                total
+            };
+        } else {
+            // Default roll behavior for non-initiative skill checks.
+            rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[1d20${modifier}]]}} {{modifier=${modifier}}}`;
+        }
 
         // Handle roll string copying and sending
-        handleRollString(rollString, `${skillName} check`, e.clientX, e.clientY);
+        handleRollString(
+            rollString,
+            `${skillName} check`,
+            e.clientX,
+            e.clientY,
+            initiativePayload ? { initiative: initiativePayload } : undefined
+        );
     });
 });
 
@@ -671,7 +724,7 @@ function logHTMLStructure(element) {
 }
 
 // Function to handle roll string copying and sending
-function handleRollString(rollString, description, x, y) {
+function handleRollString(rollString, description, x, y, options = {}) {
     // Get the clipboard preference
     chrome.storage.sync.get(['copyToClipboard'], function(result) {
         const shouldCopy = result.copyToClipboard === true;
@@ -695,13 +748,19 @@ function handleRollString(rollString, description, x, y) {
         actions.push(
             chrome.runtime.sendMessage({
                 type: 'ROLL_STRING',
-                rollString: rollString
+                rollString: rollString,
+                initiative: options?.initiative
             })
             .then(response => {
                 console.log('Background response:', response);
                 if (!response || !response.success) {
                     console.warn('Failed to process roll:', response?.error || 'No response');
                     showPopup('Failed to send to Roll20: ' + (response?.error || 'No response'), x, y);
+                    return;
+                }
+
+                if (response?.initiative && !response.initiative.success) {
+                    console.warn('Initiative tracker update failed:', response.initiative.error);
                 }
             })
             .catch(err => {

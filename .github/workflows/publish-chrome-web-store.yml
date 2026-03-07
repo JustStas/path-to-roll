@@ -1,0 +1,71 @@
+name: Publish Chrome extension
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_action:
+        description: 'Chrome Web Store action to run'
+        required: true
+        default: 'publish'
+        type: choice
+        options:
+          - upload
+          - publish
+          - testers
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare zip filename
+        run: |
+          VERSION=$(python3 - <<'PY'
+          import json
+          print(json.load(open('manifest.json'))['version'])
+          PY
+          )
+
+          if [ -n "${GITHUB_REF_NAME:-}" ]; then
+            SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          else
+            SAFE_REF="manual"
+          fi
+
+          ZIP_FILE="path-to-roll-${VERSION}-${SAFE_REF}.zip"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Build extension zip
+        run: |
+          zip -r "$ZIP_FILE" . \
+            -x ".git/*" ".gitignore" ".github/*" "*.zip"
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-extension-package
+          path: ${{ env.ZIP_FILE }}
+
+      - name: Select CWS action
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "CWS_ACTION=${{ inputs.publish_action }}" >> "$GITHUB_ENV"
+          else
+            echo "CWS_ACTION=publish" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload/publish to Chrome Web Store
+        uses: mobilefirstllc/cws-publish@latest
+        with:
+          action: ${{ env.CWS_ACTION }}
+          client_id: ${{ secrets.CWS_CLIENT_ID }}
+          client_secret: ${{ secrets.CWS_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.CWS_REFRESH_TOKEN }}
+          extension_id: ${{ secrets.CWS_EXTENSION_ID }}
+          zip_file: ${{ env.ZIP_FILE }}

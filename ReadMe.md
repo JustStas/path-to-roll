@@ -142,6 +142,31 @@ Feel free to submit issues and enhancement requests!
    - After approval, the extension will be publicly available
    - Keep your contact information and privacy policy up to date
 
+### CI/CD Publishing (GitHub Actions)
+
+This project includes a ready workflow at:
+
+- `.github/workflows/publish-chrome-web-store.yml`
+
+It uses `mobilefirstllc/cws-publish` to upload/publish directly to Chrome Web Store.
+
+#### Required GitHub Secrets
+
+Add these repository secrets:
+
+- `CWS_CLIENT_ID`
+- `CWS_CLIENT_SECRET`
+- `CWS_REFRESH_TOKEN`
+- `CWS_EXTENSION_ID`
+
+#### Triggers
+
+- Push tag `v*` (for example `v1.0.4`) -> runs with `publish` action
+- Manual run (`workflow_dispatch`) -> lets you choose:
+  - `upload`
+  - `publish`
+  - `testers`
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
