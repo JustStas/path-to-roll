@@ -81,11 +81,40 @@ document.addEventListener('click', function(e) {
         console.log('Found character name:', charName);
         const skillName = skillNameElement.textContent.trim();
 
-        // Create the roll template string
-        const rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[1d20${modifier}]]}} {{modifier=${modifier}}}`;
+        // Initiative is a special case: if a matching token exists in Roll20,
+        // we'll also try to add the rolled result to the initiative tracker.
+        const isInitiativeRoll = skillName.toLowerCase() === 'initiative';
+
+        let rollString;
+        let initiativePayload;
+
+        if (isInitiativeRoll) {
+            // Roll once here so the chat output and initiative tracker use the same value.
+            const parsedModifier = Number.parseInt(modifier, 10) || 0;
+            const d20 = Math.floor(Math.random() * 20) + 1;
+            const total = d20 + parsedModifier;
+
+            rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[${total}]]}} {{modifier=${modifier}}} {{formula=1d20${modifier}}} {{d20=${d20}}}`;
+            initiativePayload = {
+                enabled: true,
+                characterName: charName,
+                modifier: modifier,
+                d20,
+                total
+            };
+        } else {
+            // Default roll behavior for non-initiative skill checks.
+            rollString = `&{template:default} {{name=${charName} - ${skillName}}} {{roll=[[1d20${modifier}]]}} {{modifier=${modifier}}}`;
+        }
 
         // Handle roll string copying and sending
-        handleRollString(rollString, `${skillName} check`, e.clientX, e.clientY);
+        handleRollString(
+            rollString,
+            `${skillName} check`,
+            e.clientX,
+            e.clientY,
+            initiativePayload ? { initiative: initiativePayload } : undefined
+        );
     });
 });
 
@@ -671,7 +700,7 @@ function logHTMLStructure(element) {
 }
 
 // Function to handle roll string copying and sending
-function handleRollString(rollString, description, x, y) {
+function handleRollString(rollString, description, x, y, options = {}) {
     // Get the clipboard preference
     chrome.storage.sync.get(['copyToClipboard'], function(result) {
         const shouldCopy = result.copyToClipboard === true;
@@ -695,13 +724,19 @@ function handleRollString(rollString, description, x, y) {
         actions.push(
             chrome.runtime.sendMessage({
                 type: 'ROLL_STRING',
-                rollString: rollString
+                rollString: rollString,
+                initiative: options?.initiative
             })
             .then(response => {
                 console.log('Background response:', response);
                 if (!response || !response.success) {
                     console.warn('Failed to process roll:', response?.error || 'No response');
                     showPopup('Failed to send to Roll20: ' + (response?.error || 'No response'), x, y);
+                    return;
+                }
+
+                if (response?.initiative && !response.initiative.success) {
+                    console.warn('Initiative tracker update failed:', response.initiative.error);
                 }
             })
             .catch(err => {
