@@ -35,6 +35,14 @@ chrome.tabs.query({}, async (tabs) => {
     const pathbuilderText = document.getElementById('pathbuilder-text');
     const roll20Button = document.getElementById('roll20-button');
     const roll20Text = document.getElementById('roll20-text');
+    const isRoll20GameTab = (url = '') => {
+        try {
+            const parsed = new URL(url);
+            return parsed.hostname === 'app.roll20.net' && /^\/editor(?:\/|$)/.test(parsed.pathname);
+        } catch {
+            return false;
+        }
+    };
 
     // Check for Pathbuilder tabs
     const hasPathbuilderTab = tabs.some(tab => tab.url.includes('pathbuilder2e.com'));
@@ -51,7 +59,7 @@ chrome.tabs.query({}, async (tabs) => {
     }
 
     // Check for Roll20 tabs
-    const roll20Tabs = tabs.filter(tab => tab.url.includes('app.roll20.net/editor/'));
+    const roll20Tabs = tabs.filter(tab => isRoll20GameTab(tab.url || ''));
     const roll20Count = roll20Tabs.length;
 
     // Update Roll20 status based on both presence and connection

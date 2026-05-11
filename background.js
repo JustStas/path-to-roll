@@ -5,11 +5,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'ROLL_STRING') {
         // Find Roll20 tabs - specifically the game editor
         chrome.tabs.query({}, (tabs) => {
+            const isRoll20GameTab = (url = '') => {
+                try {
+                    const parsed = new URL(url);
+                    return parsed.hostname === 'app.roll20.net' && /^\/editor(?:\/|$)/.test(parsed.pathname);
+                } catch {
+                    return false;
+                }
+            };
+
             // Filter for Roll20 game tabs specifically
             const roll20Tabs = tabs.filter(tab => {
                 const url = tab.url || '';
                 console.log('Checking tab:', { id: tab.id, url });
-                return url.includes('app.roll20.net/editor/');
+                return isRoll20GameTab(url);
             });
 
             console.log('Found Roll20 game tabs:', roll20Tabs);

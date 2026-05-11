@@ -173,6 +173,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Changelog
 
+### Version 1.0.5
+- Fixed Roll20 tab detection for URLs without a trailing slash (`https://app.roll20.net/editor`)
+
 ### Version 1.0.3
 - Fixed char name display - curtesy of @oganm (https://github.com/oganm)
 
