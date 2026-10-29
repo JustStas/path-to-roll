@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # Also support python3 scripts/chrome_web_store.py.
 
 
 API = "https://chromewebstore.googleapis.com"
-ACTIONS = ("upload", "submit-review", "release-staged")
+ACTIONS = ("upload", "submit-release")
 
 
 class StoreError(Exception):
@@ -32,6 +32,7 @@ def request_json(url, *, method="GET", data=None, headers=None):
             result = json.load(response)
     except urllib.error.HTTPError as error:
         # Do not expose response bodies, request headers or credential-bearing errors.
+        error.close()
         raise StoreError(f"Google API returned HTTP {error.code}; inspect the Developer Dashboard before retrying.") from None
     except (OSError, ValueError):
         detail = "mutation outcome is uncertain" if method != "GET" else "status could not be read"
@@ -85,7 +86,7 @@ def validate_status(status):
 
 def deploy(action, package, expected_version, env, *, transport=None, sleep=time.sleep, poll_attempts=24):
     if action not in ACTIONS:
-        raise StoreError("Invalid action; use upload, submit-review or release-staged")
+        raise StoreError("Invalid action; use upload or submit-release")
     name = configuration(env)
     try:
         expected = chrome_version(expected_version)
@@ -110,45 +111,38 @@ def deploy(action, package, expected_version, env, *, transport=None, sleep=time
     validate_status(status)
     submitted = status.get("submittedItemRevisionStatus", {})
 
-    if action == "release-staged":
-        if submitted.get("state") != "STAGED" or revision_versions(submitted) != [expected_version]:
-            raise StoreError("The staged revision must be STAGED and match the exact expected version")
-        publish_type = "DEFAULT_PUBLISH"
-    else:
-        if submitted.get("state") in {"PENDING_REVIEW", "STAGED"}:
-            raise StoreError("An active submission exists; inspect it before uploading another version")
-        versions = revision_versions(status.get("publishedItemRevisionStatus", {})) + revision_versions(submitted)
-        if any(expected <= chrome_version(version) for version in versions):
-            raise StoreError("The new manifest version must be higher than the store's existing revisions")
-        upload = transport(f"{API}/upload/v2/{name}:upload", method="POST",
-                           data=Path(package).read_bytes(), headers={**headers, "Content-Type": "application/zip"})
-        state = upload.get("uploadState")
-        # Enum values come from Google's v2 discovery schema (not the old v1 API).
-        asynchronous = state == "IN_PROGRESS"
-        if asynchronous:
-            for _ in range(poll_attempts):
-                sleep(5)
-                state = transport(status_url, headers=headers).get("lastAsyncUploadState")
-                if state != "IN_PROGRESS":
-                    break
-        if state != "SUCCEEDED":
-            raise StoreError("Store upload did not succeed or is still processing; inspect its status before retrying")
-        if (not asynchronous and upload.get("crxVersion") != expected_version) or (
-                asynchronous and upload.get("crxVersion") not in (None, expected_version)):
-            raise StoreError("Store upload returned an unexpected version; no review was submitted")
-        if action == "upload":
-            return f"Uploaded {expected_version} as a draft. No review or publication requested."
-        publish_type = "STAGED_PUBLISH"
+    if submitted.get("state") in {"PENDING_REVIEW", "STAGED"}:
+        raise StoreError("An active submission exists; inspect it before uploading another version")
+    versions = revision_versions(status.get("publishedItemRevisionStatus", {})) + revision_versions(submitted)
+    if any(expected <= chrome_version(version) for version in versions):
+        raise StoreError("The new manifest version must be higher than the store's existing revisions")
+    upload = transport(f"{API}/upload/v2/{name}:upload", method="POST",
+                       data=Path(package).read_bytes(), headers={**headers, "Content-Type": "application/zip"})
+    state = upload.get("uploadState")
+    # Enum values come from Google's v2 discovery schema (not the old v1 API).
+    asynchronous = state == "IN_PROGRESS"
+    if asynchronous:
+        for _ in range(poll_attempts):
+            sleep(5)
+            state = transport(status_url, headers=headers).get("lastAsyncUploadState")
+            if state != "IN_PROGRESS":
+                break
+    if state != "SUCCEEDED":
+        raise StoreError("Store upload did not succeed or is still processing; inspect its status before retrying")
+    if (not asynchronous and upload.get("crxVersion") != expected_version) or (
+            asynchronous and upload.get("crxVersion") not in (None, expected_version)):
+        raise StoreError("Store upload returned an unexpected version; no review was submitted")
+    if action == "upload":
+        return f"Uploaded {expected_version} as a draft. No review or publication requested."
 
     result = transport(f"{API}/v2/{name}:publish", method="POST", data=json.dumps({
-        "publishType": publish_type, "skipReview": False, "blockOnWarnings": True,
+        "publishType": "DEFAULT_PUBLISH", "skipReview": False, "blockOnWarnings": True,
     }).encode(), headers={**headers, "Content-Type": "application/json"})
-    allowed = {"PUBLISHED"} if action == "release-staged" else {"PENDING_REVIEW", "STAGED"}
-    if result.get("state") not in allowed:
+    if result.get("state") not in {"PENDING_REVIEW", "PUBLISHED"}:
         raise StoreError("Publish returned an unexpected state; inspect the Developer Dashboard before retrying")
-    if action == "release-staged":
-        return f"Published staged version {expected_version}."
-    return f"Submitted {expected_version} for staged review ({result['state']}). Release remains a separate action."
+    if result["state"] == "PUBLISHED":
+        return f"Published {expected_version}."
+    return f"Submitted {expected_version} for review. Google will publish automatically after approval."
 
 
 def main():

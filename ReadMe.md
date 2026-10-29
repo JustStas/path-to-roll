@@ -113,9 +113,10 @@ Feel free to submit issues and enhancement requests!
 ## Publishing to Chrome Web Store
 
 GitHub Actions tests and builds a clean extension ZIP on pull requests and pushes
-to `main`. Publishing uses a separate, manually triggered environment job:
-`package` (default), `upload`, `submit-review` (stage after Google approval), or
-`release-staged` (explicitly release an approved version). Tags do not publish.
+to `main`. Push a version tag matching `manifest.json` on a commit already merged
+into `main` to automatically test, package, upload and submit the release. Google
+publishes it automatically after approval; no second release click is needed.
+Manual `package` previews and draft-only `upload` remain available.
 
 See [deployment setup and release instructions](docs/deployment.md) for the required
 GitHub environment, OAuth secrets, publisher/item IDs, version checks and recovery.

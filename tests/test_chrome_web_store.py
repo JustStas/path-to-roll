@@ -62,42 +62,43 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(calls[-1][2], self.package.read_bytes())
         self.assertEqual(calls[-1][3]["Authorization"], "Bearer token")
 
-    def test_review_is_staged_and_blocks_warnings(self):
-        result, calls = self.run_deploy("submit-review", [
+    def test_release_submits_for_automatic_publication_and_blocks_warnings(self):
+        result, calls = self.run_deploy("submit-release", [
             {"access_token": "token"}, status(),
             {"uploadState": "SUCCEEDED", "crxVersion": VERSION}, {"state": "PENDING_REVIEW"}])
         self.assertIn("review", result)
         self.assertEqual(json.loads(calls[-1][2]), {
-            "publishType": "STAGED_PUBLISH", "skipReview": False, "blockOnWarnings": True})
+            "publishType": "DEFAULT_PUBLISH", "skipReview": False, "blockOnWarnings": True})
+        self.assertIn("automatically", result)
 
     def test_async_upload_waits_for_success_before_review(self):
-        result, calls = self.run_deploy("submit-review", [
+        result, calls = self.run_deploy("submit-release", [
             {"access_token": "token"}, status(), {"uploadState": "IN_PROGRESS"},
-            status(upload="IN_PROGRESS"), status(upload="SUCCEEDED"), {"state": "STAGED"}])
+            status(upload="IN_PROGRESS"), status(upload="SUCCEEDED"), {"state": "PENDING_REVIEW"}])
         self.assertIn("review", result)
         self.assertEqual([call[1] for call in calls], ["POST", "GET", "POST", "GET", "GET", "POST"])
 
     def test_failed_or_unknown_upload_never_publishes(self):
         for state in ["FAILED", "UPLOAD_STATE_UNSPECIFIED", None]:
             with self.subTest(state=state), self.assertRaisesRegex(StoreError, "upload"):
-                self.run_deploy("submit-review", [
+                self.run_deploy("submit-release", [
                     {"access_token": "token"}, status(), {"uploadState": state}])
 
     def test_async_failure_and_timeout_never_publish(self):
         for states in [["FAILED"], ["IN_PROGRESS", "IN_PROGRESS"]]:
             with self.subTest(states=states), self.assertRaisesRegex(StoreError, "upload"):
-                self.run_deploy("submit-review", [
+                self.run_deploy("submit-release", [
                     {"access_token": "token"}, status(), {"uploadState": "IN_PROGRESS"},
                     *[status(upload=state) for state in states]])
 
     def test_upload_version_mismatch_is_not_submitted(self):
         with self.assertRaisesRegex(StoreError, "version"):
-            self.run_deploy("submit-review", [
+            self.run_deploy("submit-release", [
                 {"access_token": "token"}, status(), {"uploadState": "SUCCEEDED", "crxVersion": "2.0"}])
 
     def test_synchronous_upload_must_confirm_exact_version(self):
         with self.assertRaisesRegex(StoreError, "version"):
-            self.run_deploy("submit-review", [
+            self.run_deploy("submit-release", [
                 {"access_token": "token"}, status(), {"uploadState": "SUCCEEDED"}])
 
     def test_unknown_or_malformed_store_revisions_block_all_mutations(self):
@@ -126,20 +127,12 @@ class StoreTests(unittest.TestCase):
             with self.subTest(version=version), self.assertRaisesRegex(StoreError, "higher"):
                 self.run_deploy("upload", [{"access_token": "token"}, status(version=version)])
 
-    def test_release_requires_exact_staged_version(self):
-        for response in [status(submitted="PENDING_REVIEW"), status(),
-                         {"submittedItemRevisionStatus": {"state": "STAGED",
-                             "distributionChannels": [{"crxVersion": "1.0.7"}]}}]:
-            with self.subTest(response=response), self.assertRaisesRegex(StoreError, "staged"):
-                self.run_deploy("release-staged", [{"access_token": "token"}, response])
-
-    def test_release_staged_does_not_upload(self):
-        result, calls = self.run_deploy("release-staged", [
-            {"access_token": "token"}, status(submitted="STAGED"), {"state": "PUBLISHED"}])
+    def test_immediately_approved_submission_is_reported_as_published(self):
+        result, calls = self.run_deploy("submit-release", [
+            {"access_token": "token"}, status(),
+            {"uploadState": "SUCCEEDED", "crxVersion": VERSION}, {"state": "PUBLISHED"}])
         self.assertIn("Published", result)
-        self.assertEqual(len(calls), 3)
-        self.assertTrue(calls[-1][0].endswith(":publish"))
-        self.assertEqual(json.loads(calls[-1][2])["publishType"], "DEFAULT_PUBLISH")
+        self.assertEqual(len(calls), 4)
 
     def test_missing_configuration_and_bad_ids_fail_before_network(self):
         for changes in [{"CWS_CLIENT_SECRET": ""}, {"CWS_PUBLISHER_ID": "../bad"},
@@ -163,8 +156,8 @@ class StoreTests(unittest.TestCase):
 
     def test_unexpected_publish_response_fails(self):
         with self.assertRaisesRegex(StoreError, "unexpected"):
-            self.run_deploy("submit-review", [{"access_token": "token"}, status(),
-                {"uploadState": "SUCCEEDED", "crxVersion": VERSION}, {"state": "PUBLISHED"}])
+            self.run_deploy("submit-release", [{"access_token": "token"}, status(),
+                {"uploadState": "SUCCEEDED", "crxVersion": VERSION}, {"state": "STAGED"}])
 
 
 class TransportTests(unittest.TestCase):
@@ -174,6 +167,7 @@ class TransportTests(unittest.TestCase):
             request_json("https://example.invalid", method="POST", data=b"secret")
         self.assertIn("403", str(caught.exception))
         self.assertNotIn("secret", str(caught.exception))
+        self.assertTrue(error.fp.closed)
 
     def test_timeout_reports_uncertain_mutation_and_does_not_retry(self):
         with patch("urllib.request.urlopen", side_effect=TimeoutError("secret")) as opener:

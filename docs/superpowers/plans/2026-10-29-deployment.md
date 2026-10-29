@@ -1,6 +1,6 @@
 # Deployment implementation plan
 
-**Goal:** Build and validate a manually controlled Chrome Web Store pipeline in a
+**Goal:** Build and validate a version-tag Chrome Web Store release pipeline in a
 separate checkout/branch without invoking live store mutations.
 
 **Architecture:** Python standard-library scripts package the source and call the
@@ -25,10 +25,10 @@ v2 API. GitHub Actions separates credential-free CI from the store environment.
 2. [x] Add API-client tests, verify failure, then implement `scripts/chrome_web_store.py`.
    Test upload-only, staged review, async success/failure/timeout, auth failures,
    invalid/missing configuration, active submissions, version monotonicity and
-   release-staged gates. Run the whole suite without network.
+   DEFAULT_PUBLISH auto-publication. Run the whole suite without network.
 3. [x] Replace the workflow; add exact setup/runbook and link it from ReadMe.md.
    Validate YAML/Actions expressions, pinned official actions, credential isolation,
-   manual-only store gates, branch/version guards and artifact handoff.
+   tag-only publication, tag/version/commit ancestry guards and artifact handoff.
 4. [x] Review the full diff, run all checks and packaging; deliver on the isolated branch,
    and create a draft PR if GitHub write access is available. Report live validation
    and user-configuration limits precisely.
@@ -36,7 +36,9 @@ v2 API. GitHub Actions separates credential-free CI from the store environment.
 ## Verification and review
 
 - Baseline: no test suite or build dependencies; `node --test` discovers zero JS tests.
-- Python tests: 30 pass, including source validation, request gates and mocked store API.
+- Python tests: 38 pass, including source validation, request gates, real local Git
+  tag fixtures and mocked store API. Annotated/lightweight tags, version mismatch,
+  unmerged commits, moved tags and missing main history are covered.
 - Built 12-entry store ZIP and SHA-256; runtime sources remain unchanged.
 - `actionlint` 1.7.12: clean (downloaded official binary, checksum verified).
 - Fresh reviewer found unknown/malformed preflight state, a previous async upload
@@ -44,3 +46,5 @@ v2 API. GitHub Actions separates credential-free CI from the store environment.
   Added reproductions, observed failures, tightened validation, and reran the full
   suite green. No reviewer findings remain deferred.
 - Live store authentication/publication and environment setup deliberately excluded.
+- User approved switching to automatic version-tag publication: submission uses
+  DEFAULT_PUBLISH and Google publishes after approval; no staged-release action.
