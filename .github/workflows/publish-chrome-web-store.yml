@@ -1,71 +1,141 @@
-name: Publish Chrome extension
+name: Chrome extension CI and release
 
 on:
+  pull_request:
+    branches: [main]
   push:
-    tags:
-      - 'v*'
+    branches: [main]
   workflow_dispatch:
     inputs:
-      publish_action:
-        description: 'Chrome Web Store action to run'
+      action:
+        description: 'Store operation (package does not contact Google)'
         required: true
-        default: 'publish'
+        default: package
         type: choice
         options:
+          - package
           - upload
-          - publish
-          - testers
+          - submit-review
+          - release-staged
+      expected_version:
+        description: 'Exact manifest.json version; release-staged must also match the approved store revision'
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      sha256: ${{ steps.package.outputs.sha256 }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Prepare zip filename
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Validate release request
+        env:
+          RELEASE_ACTION: ${{ inputs.action }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          CWS_PUBLISHING_ENABLED: ${{ vars.CWS_PUBLISHING_ENABLED }}
+        run: python3 scripts/validate_release_request.py
+
+      - name: Run JavaScript tests
+        run: node --test
+
+      - name: Test packaging and store operations without network
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Validate sources and build ZIP
+        id: package
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
         run: |
-          VERSION=$(python3 - <<'PY'
+          python3 - <<'PY'
+          import hashlib
           import json
-          print(json.load(open('manifest.json'))['version'])
+          import os
+          from pathlib import Path
+          from scripts.package_extension import build_package
+
+          package = build_package(Path('.'), Path('dist'), os.environ.get('EXPECTED_VERSION') or None)
+          version = json.loads(Path('manifest.json').read_text())['version']
+          digest = hashlib.sha256(package.read_bytes()).hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\nsha256={digest}\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f'Built `{package.name}` from `{os.environ["GITHUB_SHA"]}`.\n\nSHA-256: `{digest}`\n')
           PY
-          )
 
-          if [ -n "${GITHUB_REF_NAME:-}" ]; then
-            SAFE_REF="${GITHUB_REF_NAME//\//-}"
-          else
-            SAFE_REF="manual"
-          fi
-
-          ZIP_FILE="path-to-roll-${VERSION}-${SAFE_REF}.zip"
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
-      - name: Build extension zip
-        run: |
-          zip -r "$ZIP_FILE" . \
-            -x ".git/*" ".gitignore" ".github/*" "*.zip"
-
-      - name: Upload zip artifact
-        uses: actions/upload-artifact@v4
+      - name: Save tested package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: chrome-extension-package
-          path: ${{ env.ZIP_FILE }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Select CWS action
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "CWS_ACTION=${{ inputs.publish_action }}" >> "$GITHUB_ENV"
-          else
-            echo "CWS_ACTION=publish" >> "$GITHUB_ENV"
-          fi
-
-      - name: Upload/publish to Chrome Web Store
-        uses: mobilefirstllc/cws-publish@latest
+  store:
+    name: 'Chrome Web Store: ${{ inputs.action }} ${{ inputs.expected_version }}'
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.action != 'package'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: chrome-web-store
+    concurrency:
+      group: chrome-web-store
+      cancel-in-progress: false
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          action: ${{ env.CWS_ACTION }}
-          client_id: ${{ secrets.CWS_CLIENT_ID }}
-          client_secret: ${{ secrets.CWS_CLIENT_SECRET }}
-          refresh_token: ${{ secrets.CWS_REFRESH_TOKEN }}
-          extension_id: ${{ secrets.CWS_EXTENSION_ID }}
-          zip_file: ${{ env.ZIP_FILE }}
+          persist-credentials: false
+
+      - name: Download the tested artifact from this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: chrome-extension-package
+          path: dist
+
+      - name: Verify artifact checksum against build output
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          from scripts.package_extension import chrome_version
+
+          version = os.environ['RELEASE_VERSION']
+          chrome_version(version)
+          package = Path('dist') / f'path-to-roll-{version}.zip'
+          if hashlib.sha256(package.read_bytes()).hexdigest() != os.environ['RELEASE_SHA256']:
+              raise SystemExit('Artifact checksum mismatch; refusing store operation')
+          PY
+
+      - name: Run explicitly requested store operation
+        env:
+          RELEASE_ACTION: ${{ inputs.action }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID || secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          python3 scripts/chrome_web_store.py "$RELEASE_ACTION" \
+            --package "dist/path-to-roll-$RELEASE_VERSION.zip" \
+            --expected-version "$RELEASE_VERSION" >> "$GITHUB_STEP_SUMMARY"
