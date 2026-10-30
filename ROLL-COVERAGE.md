@@ -87,6 +87,6 @@ A synchronous failure can leave a local visual edit. The queue is not a conflict
 resolution system and does not survive page reload.
 
 Other pet species/levels, healing, heightened/focus/innate spell modes, multiple
-damage components and extra critical dice are not exhaustively covered. These
-changes do not modify the release manifest or deployment workflow. Browser tests
+damage components and extra critical dice are not exhaustively covered.
+Release 1.0.6 includes these changes; the deployment workflow is unchanged. Browser tests
 are a separate local command, not an addition to the publishing workflow.
