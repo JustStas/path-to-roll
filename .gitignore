@@ -6,3 +6,5 @@
 ehthumbs.db
 Thumbs.db
 *.zip
+dist/
+__pycache__/

@@ -112,60 +112,18 @@ Feel free to submit issues and enhancement requests!
 
 ## Publishing to Chrome Web Store
 
-1. **Prepare the Extension**:
-   - Update the version number in `manifest.json`
-   - Ensure all images and icons meet Chrome Web Store requirements:
-     - One 128x128 pixel icon
-     - One promotional tile image (440x280)
-     - At least two screenshots (1280x800 or 640x400)
-   - Create a ZIP file of your extension directory (excluding `.git` and development files)
+GitHub Actions tests and builds a clean extension ZIP on pull requests and pushes
+to `main`. Push a version tag matching `manifest.json` on a commit already merged
+into `main` to automatically test, package, upload and submit the release. Google
+publishes it automatically after approval; no second release click is needed.
+Manual `package` previews and draft-only `upload` remain available.
+Use manual `check-auth` from `main` to verify the environment's OAuth credentials
+and read item status while publishing remains disabled; it never uploads or publishes.
 
-2. **Developer Registration**:
-   - Visit the [Chrome Developer Dashboard](https://chrome.google.com/webstore/devconsole)
-   - Sign up for a developer account
-   - Pay one-time registration fee ($5 USD)
-
-3. **Submit the Extension**:
-   - Click "New Item" in the developer dashboard
-   - Upload your ZIP file
-   - Fill out required information:
-     - Detailed description
-     - Privacy policy
-     - Screenshots/videos
-     - Category (Productivity)
-     - Language
-   - Submit for review
-
-4. **Post-Publication**:
-   - Review typically takes 2-3 business days
-   - Respond to any reviewer feedback promptly
-   - After approval, the extension will be publicly available
-   - Keep your contact information and privacy policy up to date
-
-### CI/CD Publishing (GitHub Actions)
-
-This project includes a ready workflow at:
-
-- `.github/workflows/publish-chrome-web-store.yml`
-
-It uses `mobilefirstllc/cws-publish` to upload/publish directly to Chrome Web Store.
-
-#### Required GitHub Secrets
-
-Add these repository secrets:
-
-- `CWS_CLIENT_ID`
-- `CWS_CLIENT_SECRET`
-- `CWS_REFRESH_TOKEN`
-- `CWS_EXTENSION_ID`
-
-#### Triggers
-
-- Push tag `v*` (for example `v1.0.4`) -> runs with `publish` action
-- Manual run (`workflow_dispatch`) -> lets you choose:
-  - `upload`
-  - `publish`
-  - `testers`
+See [deployment setup and release instructions](docs/deployment.md) for the required
+GitHub environment, OAuth secrets, publisher/item IDs, version checks and recovery.
+Package-only CI works without any Google credentials. Store access stays disabled
+until the repository owner completes setup and enables it.
 
 ## License
 
