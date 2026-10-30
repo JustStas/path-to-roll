@@ -6,5 +6,8 @@
 ehthumbs.db
 Thumbs.db
 *.zip
+node_modules/
 dist/
 __pycache__/
+playwright-report/
+test-results/

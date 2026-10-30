@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head><title>Pathbuilder roll fixture</title></head>
+<body>
+<!-- Reduced from AgentTesting (Witch 1), Pathbuilder 111.4, inspected 2026-10-29.
+     IDs are test locators. Roll classes, nesting, data attributes and text match
+     the observed sheet. No familiar, pet or summon markup was available in the
+     free app, so this fixture makes no claim about those paid-app surfaces. -->
+<div class="button-name"><div class="button-selection">AgentTesting</div></div>
+
+<div id="fortitude" class="section-skill saves-button">
+  <img class="dice-proficiency"><img src="icon_prof_trained.png">
+  <div class="section-skill-total">+4</div><div class="section-skill-name">Fortitude</div>
+</div>
+<div id="perception" class="section-skill">
+  <img class="dice-proficiency"><img src="icon_prof_trained.png">
+  <div class="section-skill-total">+3</div><div class="section-skill-name">Perception</div>
+</div>
+<div id="initiative" class="section-skill">
+  <img class="dice-proficiency">
+  <div class="section-skill-total">+0</div><div class="section-skill-name">Initiative</div>
+</div>
+<div id="strength" class="ability-span">
+  <div class="abilityLabel">STR</div><div class="abilityMod">+2</div>
+</div>
+
+<div class="listview-item div-info-lm-box">
+  <div class="listview-title">Ignition</div>
+  <div class="listview-detail">
+    <div>
+      <div id="spell-attack" class="small-margin-right-bottom div-button-simple button-simple button-text dice-button named-roll" data-roll-value="1d20+4" data-description="&lt;b&gt;Traits&lt;/b&gt; Attack, Cantrip, Concentrate, Fire, Manipulate" data-title="Ignition Spell Attack"><img class="named-roll" data-roll-value="1d20+4" data-description="&lt;b&gt;Traits&lt;/b&gt; Attack, Cantrip, Concentrate, Fire, Manipulate" data-title="Ignition Spell Attack">Spell Attack +4</div>
+      <div id="spell-damage" class="dice-button named-roll" data-roll-value="2d4" data-title="Ignition" data-description="2d4 fire damage"><img class="named-roll" data-roll-value="2d4" data-title="Ignition">2d4</div>
+    </div>
+    <div><span class="trait">Attack</span><span class="trait">Fire</span></div>
+  </div>
+</div>
+
+<!-- The current heading has no .weapon-name. Its sibling relationship to the
+     hit/damage row is significant: a parent-only lookup loses name/proficiency.
+     The main Roll button opens Pathbuilder's native tray and is not bridged. -->
+<div id="club" class="weapon-container">
+  <div class="weapon-buttons"><div class="dice-button"><img>Roll</div></div>
+  <div><img src="icon_prof_trained.png"><div style="margin-left:1em;display:inline-block;vertical-align:middle">Club</div></div>
+  <div class="weapon-traits"><span class="trait">Thrown 10ft</span></div>
+  <div>
+    <div id="weapon-attack" class="tooltip"><img class="icon-dice"><div class="weapon-hit"><span class="weapon-span"><i>Hit:</i></span> +5<span class="tooltiptextCrit"><div class="subtitle-map">MAP -5</div><span class="mapspan">Attack 1</span>+5<br><span class="mapspan">Attack 2</span>+0<br><span class="mapspan">Attack 3</span>-5</span></div></div>
+    <div id="weapon-damage" class="tooltip"><img class="icon-damage-dice"><span><span class="weapon-span"><i>Damage:</i></span> 1d6+2<sup><span class="superscript-damage">Bludgeoning</span></sup><span class="tooltiptextCrit"><div class="subtitle-map">Critical</div>2x:<div class="crit-text">1d6+2 (B)</div></span></span></div>
+  </div>
+</div>
+</body>
+</html>
