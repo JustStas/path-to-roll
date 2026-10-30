@@ -4,6 +4,40 @@ console.log('Roll20 helper script loaded');
 const INITIATIVE_REQUEST_EVENT = 'path-to-roll:add-initiative';
 const INITIATIVE_RESULT_EVENT = 'path-to-roll:add-initiative:result';
 let initiativeBridgeReadyPromise = null;
+let initiativeNoticeTimer = null;
+
+function showInitiativeStatus({ characterName, total, status, error } = {}) {
+    if (!characterName) return;
+    const messages = {
+        pending: `Initiative for ${characterName} is waiting up to 60s for a tracker entry`,
+        applied: `Initiative for ${characterName} applied: ${total}`,
+        expired: `Initiative for ${characterName} expired: no matching tracker entry appeared within 60s`,
+        superseded: `Pending initiative for ${characterName} replaced by a newer roll`,
+        failed: `Initiative for ${characterName} could not be saved: ${error || 'unknown error'}`
+    };
+    if (!messages[status]) return;
+    let notice = document.getElementById('path-to-roll-initiative-status');
+    if (!notice) {
+        notice = document.createElement('div');
+        notice.id = 'path-to-roll-initiative-status';
+        notice.setAttribute('role', 'status');
+        Object.assign(notice.style, {
+            position: 'fixed', left: '80px', bottom: '24px', zIndex: '99999',
+            padding: '8px 12px', backgroundColor: '#242424', color: 'white',
+            borderRadius: '4px', font: '14px sans-serif', pointerEvents: 'none'
+        });
+        document.body.appendChild(notice);
+    }
+    notice.textContent = messages[status];
+    clearTimeout(initiativeNoticeTimer);
+    initiativeNoticeTimer = setTimeout(() => notice.remove(), 5000);
+}
+
+window.addEventListener('path-to-roll:add-initiative:status', event => {
+    const detail = event?.detail || {};
+    console.log('Pending initiative status:', detail);
+    showInitiativeStatus(detail);
+});
 
 function ensureInitiativeBridge() {
     if (initiativeBridgeReadyPromise) {
@@ -145,6 +179,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         .then((initiativeResult) => {
                             if (!initiativeResult?.success) {
                                 console.warn('Failed to update initiative tracker:', initiativeResult?.error);
+                            } else if (initiativeResult.pending) {
+                                console.log('Initiative waiting for tracker entry:', initiativeResult);
+                                showInitiativeStatus({ ...initiativeResult, status: 'pending' });
                             } else {
                                 console.log('Initiative tracker updated:', initiativeResult);
                             }

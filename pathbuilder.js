@@ -37,6 +37,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+// Pet statistics share the character's roll classes. Resolve their identity
+// from the active Pets view, including its separately mounted skills dialog.
+function getRollActorName(rollElement) {
+    const ownerName = document.querySelector('.button-name .button-selection')?.textContent.trim() || 'Unknown Character';
+    const petSheet = rollElement.closest('.pet-column-holder, #tabbed-area .tabbed-area-display');
+    const dialog = rollElement.closest('.modal');
+    const petSkillsDialog = dialog?.querySelector('.dialog-title')?.textContent.trim() === 'Pet Skills';
+    if (!petSheet && !petSkillsDialog) return ownerName;
+
+    const activeTab = document.querySelector('#tabbed-area > .tabbed-area-menu > .section-menu-selected');
+    if (activeTab?.textContent.trim() !== 'Pets') return ownerName;
+
+    const petName = document.querySelector('#tabbed-area > .submenu > .lm-section-menu-selected')?.textContent.trim();
+    return petName ? `${ownerName} - ${petName}` : ownerName;
+}
+
 // Listen for clicks anywhere on the document.
 document.addEventListener('click', function(e) {
     // Check if the click occurred inside a skill container.
@@ -74,10 +90,7 @@ document.addEventListener('click', function(e) {
           modifier = `+${modifier}`;
         }
 
-        // Get the character name from the specific path
-        const charButton = document.getElementsByClassName("button-name")[0]
-		const charButtonSelection = charButton ? charButton.getElementsByClassName("button-selection")[0]: null;
-        const charName = charButtonSelection ? charButtonSelection.textContent.trim() : 'Unknown Character';
+        const charName = getRollActorName(skillElement);
         console.log('Found character name:', charName);
         const skillName = skillNameElement.textContent.trim();
 
@@ -142,6 +155,26 @@ document.addEventListener('click', function(e) {
     });
 });
 
+// Weapon headings can use the legacy weapon-name class or a name directly
+// after the proficiency icon. Read the whole card, not the damage/hit row.
+function getWeaponDetails(rollElement) {
+    let container = rollElement.closest('.weapon-container');
+    if (!container) {
+        const petCard = rollElement.closest('.layout-tabbed-line');
+        if (petCard?.querySelector('.weapon-name') && petCard.querySelector('.weapon-hit')) {
+            container = petCard;
+        }
+    }
+    const proficiencyIcon = container?.querySelector('img[src*="icon_prof_"]');
+    const nameElement = container?.querySelector('.weapon-name')
+        || proficiencyIcon?.nextElementSibling;
+    return {
+        container,
+        proficiencyIcon,
+        name: nameElement?.textContent.trim() || 'Attack'
+    };
+}
+
 // Listen for clicks on attack elements
 document.addEventListener('click', function(e) {
     // Check if we clicked on or inside the attack tooltip (with d20 icon)
@@ -158,21 +191,18 @@ document.addEventListener('click', function(e) {
             e.stopPropagation();
         }
 
-        // Get the base attack bonus (text node after Hit:)
+        // Only direct text contains the base bonus. Nested spans contain MAP
+        // bonuses; some pet cards omit the separate Hit: label entirely.
         const hitDiv = hitElement.querySelector('.weapon-hit');
         if (!hitDiv) {
             console.warn("Hit div not found.");
             return;
         }
 
-        let attackBonus = '';
-        const hitSpan = hitDiv.querySelector('.weapon-span');
-        if (hitSpan) {
-            const nextNode = hitSpan.nextSibling;
-            if (nextNode && nextNode.nodeType === Node.TEXT_NODE) {
-                attackBonus = nextNode.textContent.trim();
-            }
-        }
+        let attackBonus = Array.from(hitDiv.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent)
+            .join('').trim();
 
         if (!attackBonus) {
             console.warn("Attack bonus not found.");
@@ -185,11 +215,11 @@ document.addEventListener('click', function(e) {
         }
 
         // Get the weapon name from the parent container
-        const weaponNameElement = hitElement.parentElement.querySelector('.weapon-name');
-        const weaponName = weaponNameElement ? weaponNameElement.textContent.trim() : 'Attack';
+        const weapon = getWeaponDetails(hitElement);
+        const weaponName = weapon.name;
 
         // Get proficiency level from the icon
-        const profIcon = hitElement.parentElement.querySelector('img[src*="icon_prof_"]');
+        const profIcon = weapon.proficiencyIcon;
         let profLevel = '';
         if (profIcon) {
             if (profIcon.src.includes('trained')) profLevel = 'Trained';
@@ -199,7 +229,7 @@ document.addEventListener('click', function(e) {
         }
 
         // Get weapon traits
-        const weaponContainer = hitElement.closest('.weapon-container');
+        const weaponContainer = weapon.container;
         const traitsDiv = weaponContainer ? weaponContainer.querySelector('.weapon-traits') : null;
         const traits = [];
         if (traitsDiv) {
@@ -209,10 +239,7 @@ document.addEventListener('click', function(e) {
         }
         const traitsText = traits.length > 0 ? traits.join(', ') : '';
 
-        // Get the character name
-        const charButton = document.getElementsByClassName("button-name")[0]
-		const charButtonSelection = charButton ? charButton.getElementsByClassName("button-selection")[0]: null;
-        const charName = charButtonSelection ? charButtonSelection.textContent.trim() : 'Unknown Character';
+        const charName = getRollActorName(hitElement);
 
         // Create the roll template string for attack
         const rollString = `&{template:default} {{name=${charName} - ${weaponName} Attack}} {{attack=[[1d20${attackBonus}]]}}${profLevel ? ` {{proficiency=${profLevel}}}` : ''}${traitsText ? ` {{traits=${traitsText}}}` : ''}`;
@@ -369,9 +396,16 @@ function parseDamageElements(fullText) {
 
 // Listen for clicks on damage elements
 document.addEventListener('click', function(e) {
-    // Check if we clicked on or inside the damage tooltip (with damage dice icon)
+    // Pet damage may omit both the character's icon class and Damage: label.
+    // Require a known weapon card and damage text, excluding attack tooltips.
     const damageElement = e.target.closest('.tooltip');
-    if (!damageElement || !damageElement.querySelector('img.icon-damage-dice')) return;
+    if (!damageElement) return;
+    const damageLabel = damageElement.querySelector('.weapon-span')?.textContent.trim();
+    const damageText = damageElement.querySelector('span')?.textContent.trim() || '';
+    const weaponDamage = getWeaponDetails(damageElement).container
+        && !damageElement.querySelector('.weapon-hit')
+        && (damageLabel === 'Damage:' || /^\d+d\d+(?:[+-]\d+)?/.test(damageText));
+    if (!damageElement.querySelector('img.icon-damage-dice') && !weaponDamage) return;
 
     // Stop event propagation to prevent double-handling
     e.stopPropagation();
@@ -500,13 +534,9 @@ document.addEventListener('click', function(e) {
         }
 
         // Get the weapon name from the parent container
-        const weaponNameElement = damageElement.parentElement.querySelector('.weapon-name');
-        const weaponName = weaponNameElement ? weaponNameElement.textContent.trim() : 'Attack';
+        const weaponName = getWeaponDetails(damageElement).name;
 
-        // Get the character name
-        const charButton = document.getElementsByClassName("button-name")[0]
-		const charButtonSelection = charButton ? charButton.getElementsByClassName("button-selection")[0]: null;
-        const charName = charButtonSelection ? charButtonSelection.textContent.trim() : 'Unknown Character';
+        const charName = getRollActorName(damageElement);
 
         // Process each damage element
         for (let i = 0; i < damageElements.length; i++) {
@@ -703,6 +733,7 @@ function showPopup(message, x, y) {
   popup.style.padding = "8px 12px";
   popup.style.borderRadius = "4px";
   popup.style.zIndex = "9999";
+  popup.style.pointerEvents = "none";
   popup.style.opacity = "1";
   popup.style.transition = "opacity 1s ease-out";
 
@@ -730,6 +761,7 @@ function handleRollString(rollString, description, x, y, options = {}) {
         const shouldCopy = result.copyToClipboard === true;
 
         const actions = [];
+        let initiativePending = false;
 
         // Only copy to clipboard if enabled
         if (shouldCopy) {
@@ -762,6 +794,7 @@ function handleRollString(rollString, description, x, y, options = {}) {
                 if (response?.initiative && !response.initiative.success) {
                     console.warn('Initiative tracker update failed:', response.initiative.error);
                 }
+                initiativePending = response?.initiative?.pending === true;
             })
             .catch(err => {
                 console.warn('Failed to send roll:', err);
@@ -773,7 +806,9 @@ function handleRollString(rollString, description, x, y, options = {}) {
         Promise.all(actions)
             .then(() => {
                 // Only show the "Copied" message if clipboard copying is enabled
-                if (shouldCopy) {
+                if (initiativePending) {
+                    showPopup('Initiative sent to chat; waiting up to 60s for a tracker entry', x, y);
+                } else if (shouldCopy) {
                     showPopup(`Copied: ${description}`, x, y);
                 } else {
                     showPopup(`Sent to Roll20: ${description}`, x, y);

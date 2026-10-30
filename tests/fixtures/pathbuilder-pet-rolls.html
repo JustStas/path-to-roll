@@ -1,0 +1,35 @@
+<!-- Reduced paid-app structure observed on AgentTesting on 2026-10-29.
+     IDs beginning with familiar-/pet- are test locators. Save/perception
+     and Acrobatics modifiers match the observed familiar.
+     The Pet Skills dialog lives outside #tabbed-area. -->
+<div id="tabbed-area">
+  <div class="tabbed-area-menu"><div class="section-menu section-menu-selected">Pets</div></div>
+  <div class="lm-section-menu-background submenu" style="display:block">
+    <div class="section-menu lm-section-menu section-menu-selected lm-section-menu-selected" id="selected-pet">Familiar (AgentTesting Familiar)</div>
+  </div>
+  <div class="tabbed-area-display">
+    <div class="pet-column-holder">
+      <div class="pet-column-0">
+        <div id="familiar-fortitude" class="section-skill saves-button">
+          <img class="dice-proficiency"><img src="icon_prof_trained.png">
+          <div class="section-skill-total">+4</div><div class="section-skill-name">Fortitude</div>
+        </div>
+        <div id="familiar-perception" class="section-skill">
+          <img class="dice-proficiency"><img src="icon_prof_trained.png">
+          <div class="section-skill-total">+4</div><div class="section-skill-name">Perception</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal" id="root">
+  <div class="modal-content">
+    <div class="div-topbar_holder"><div class="dialog-top-bar"><div class="dialog-title">Pet Skills</div></div></div>
+    <div id="content"><div class="scrollable"><table class="rounded-rectangle-white">
+      <tr><td><div id="pet-acrobatics" class="section-skill">
+        <img class="dice-proficiency"><img src="icon_prof_trained.png">
+        <div class="section-skill-total">+4</div><div class="section-skill-name">Acrobatics</div>
+      </div></td></tr>
+    </table></div></div>
+  </div>
+</div>
