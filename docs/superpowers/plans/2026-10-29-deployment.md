@@ -36,7 +36,7 @@ v2 API. GitHub Actions separates credential-free CI from the store environment.
 ## Verification and review
 
 - Baseline: no test suite or build dependencies; `node --test` discovers zero JS tests.
-- Python tests: 38 pass, including source validation, request gates, real local Git
+- Python tests: 47 pass, including source validation, request gates, real local Git
   tag fixtures and mocked store API. Annotated/lightweight tags, version mismatch,
   unmerged commits, moved tags and missing main history are covered.
 - Built 12-entry store ZIP and SHA-256; runtime sources remain unchanged.
@@ -48,3 +48,14 @@ v2 API. GitHub Actions separates credential-free CI from the store environment.
 - Live store authentication/publication and environment setup deliberately excluded.
 - User approved switching to automatic version-tag publication: submission uses
   DEFAULT_PUBLISH and Google publishes after approval; no staged-release action.
+
+## Read-only authentication checkpoint
+
+- [x] Add regression tests for exactly OAuth refresh + fetchStatus GET, sanitized
+  output/errors, CLI operation without package/version and no mutation fallthrough.
+- [x] Keep publishing disabled: check-auth bypasses only the enable flag, remains
+  manual/main-only, and runs in a separate environment job after credential-free CI.
+- [x] Document exact post-merge dispatch steps and what the result proves.
+- [x] Fresh review: no actionable findings; 47 tests, workflow lint and diff checks
+  pass. Deliver on PR #5 and verify that commit's CI before reporting completion.
+  Do not merge, dispatch check-auth, inspect secrets, enable publishing or create tags.

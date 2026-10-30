@@ -9,16 +9,17 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Store operation (package does not contact Google)'
+        description: 'package = no Google access; check-auth = read-only; upload = draft mutation'
         required: true
         default: package
         type: choice
         options:
           - package
+          - check-auth
           - upload
       expected_version:
-        description: 'Exact manifest.json version for this package or draft upload'
-        required: true
+        description: 'Exact manifest.json version for package/upload; leave blank for check-auth'
+        required: false
         type: string
 
 permissions:
@@ -87,6 +88,34 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
+
+  check-auth:
+    name: Check Chrome Web Store credentials (read-only)
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.action == 'check-auth'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: chrome-web-store
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate read-only request before using credentials
+        env:
+          RELEASE_ACTION: ${{ inputs.action }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+        run: python3 scripts/validate_release_request.py
+
+      - name: Refresh OAuth and read item status only
+        env:
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID || secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: python3 scripts/chrome_web_store.py check-auth >> "$GITHUB_STEP_SUMMARY"
 
   store:
     name: 'Chrome Web Store: ${{ needs.build.outputs.action }} ${{ needs.build.outputs.version }}'

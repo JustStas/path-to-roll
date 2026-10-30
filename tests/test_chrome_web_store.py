@@ -1,5 +1,6 @@
 import io
 import json
+from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import urllib.error
 import zipfile
 
-from scripts.chrome_web_store import StoreError, deploy, request_json
+from scripts.chrome_web_store import StoreError, check_auth, deploy, main, request_json
 
 
 VERSION = "1.0.6"
@@ -15,6 +16,85 @@ ITEM_ID = "a" * 32
 ENV = {"CWS_PUBLISHER_ID": "publisher-123", "CWS_EXTENSION_ID": ITEM_ID,
        "CWS_CLIENT_ID": "client", "CWS_CLIENT_SECRET": "secret",
        "CWS_REFRESH_TOKEN": "refresh"}
+
+
+class CheckAuthTests(unittest.TestCase):
+    def test_auth_check_only_refreshes_token_and_reads_configured_item(self):
+        responses = [{"access_token": "sensitive-access-token"}, {
+            "publicKey": "sensitive-response-body", "lastAsyncUploadState": "IN_PROGRESS",
+            "submittedItemRevisionStatus": {"state": "PENDING_REVIEW"}}]
+        calls = []
+
+        def transport(url, *, method="GET", data=None, headers=None):
+            calls.append((url, method, data, headers))
+            self.assertLessEqual(len(calls), 2, "Auth check must never upload or publish")
+            return responses.pop(0)
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = check_auth(ENV, transport=transport)  # Publishing flag is intentionally absent.
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual([(call[0], call[1]) for call in calls], [
+            ("https://oauth2.googleapis.com/token", "POST"),
+            (f"https://chromewebstore.googleapis.com/v2/publishers/publisher-123/items/{ITEM_ID}:fetchStatus", "GET")])
+        self.assertIsNone(calls[1][2])
+        self.assertEqual(calls[1][3], {"Authorization": "Bearer sensitive-access-token"})
+        self.assertIn("Authentication check succeeded", result)
+        for secret in ["sensitive-access-token", "sensitive-response-body", *ENV.values()]:
+            self.assertNotIn(secret, result)
+
+    def test_missing_configuration_fails_without_network(self):
+        with patch("scripts.chrome_web_store.request_json") as transport:
+            with self.assertRaisesRegex(StoreError, "CWS_CLIENT_SECRET"):
+                check_auth({**ENV, "CWS_CLIENT_SECRET": ""})
+            transport.assert_not_called()
+
+    def test_oauth_failure_stops_before_status_and_does_not_echo_body(self):
+        with patch("scripts.chrome_web_store.request_json", return_value={"error": "sensitive-failure"}) as transport:
+            with self.assertRaises(StoreError) as caught:
+                check_auth(ENV)
+            self.assertEqual(transport.call_count, 1)
+            self.assertNotIn("sensitive-failure", str(caught.exception))
+
+    def test_status_failure_never_falls_through_to_deployment(self):
+        with patch("scripts.chrome_web_store.request_json", side_effect=[
+                {"access_token": "sensitive-access-token"}, StoreError("Google API returned HTTP 403")]) as transport:
+            with self.assertRaisesRegex(StoreError, "403"):
+                check_auth(ENV)
+            self.assertEqual(transport.call_count, 2)
+
+    def test_cli_check_auth_needs_no_package_or_version_and_never_deploys(self):
+        output = io.StringIO()
+        with patch("sys.argv", ["chrome_web_store.py", "check-auth"]), \
+                patch("scripts.chrome_web_store.check_auth", return_value="Safe auth result") as checker, \
+                patch("scripts.chrome_web_store.deploy") as deployer, redirect_stdout(output):
+            main()
+        checker.assert_called_once()
+        deployer.assert_not_called()
+        self.assertEqual(output.getvalue(), "Safe auth result\n")
+
+    def test_cli_mutations_still_require_package_and_version(self):
+        for action in ["upload", "submit-release"]:
+            with self.subTest(action=action), patch("sys.argv", ["chrome_web_store.py", action]), \
+                    patch("scripts.chrome_web_store.deploy") as deployer, redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as caught:
+                    main()
+                self.assertEqual(caught.exception.code, 2)
+                deployer.assert_not_called()
+
+    def test_cli_auth_error_never_prints_response_body_or_headers(self):
+        error = urllib.error.HTTPError("https://example.invalid", 403, "sensitive-reason",
+                                      {"Set-Cookie": "sensitive-header"}, io.BytesIO(b"sensitive-body"))
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch("sys.argv", ["chrome_web_store.py", "check-auth"]), patch.dict("os.environ", ENV, clear=True), \
+                patch("urllib.request.urlopen", side_effect=[
+                    io.BytesIO(b'{"access_token":"sensitive-access-token"}'), error]) as opener, \
+                redirect_stdout(stdout), redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+            main()
+        self.assertEqual(caught.exception.code, 1)
+        self.assertEqual(opener.call_count, 2)
+        self.assertIn("403", stderr.getvalue())
+        self.assertNotIn("sensitive", stdout.getvalue() + stderr.getvalue())
 
 
 def status(version="1.0.5", state="PUBLISHED", submitted=None, upload=None):

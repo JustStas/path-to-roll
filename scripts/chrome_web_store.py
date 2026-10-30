@@ -84,6 +84,28 @@ def validate_status(status):
                 raise StoreError("Store revision contains an invalid version; refusing store mutation") from None
 
 
+def authenticated_status(name, env, transport):
+    token_result = transport("https://oauth2.googleapis.com/token", method="POST", data=urllib.parse.urlencode({
+        "client_id": env["CWS_CLIENT_ID"], "client_secret": env["CWS_CLIENT_SECRET"],
+        "refresh_token": env["CWS_REFRESH_TOKEN"], "grant_type": "refresh_token",
+    }).encode(), headers={"Content-Type": "application/x-www-form-urlencoded"})
+    token = token_result.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise StoreError("OAuth did not return an access token; check the configured credentials")
+    headers = {"Authorization": f"Bearer {token}"}
+    status_url = f"{API}/v2/{name}:fetchStatus"
+    status = transport(status_url, headers=headers)
+    return headers, status_url, status
+
+
+def check_auth(env, *, transport=None):
+    """Only OAuth token refresh and fetchStatus GET; never call deploy or mutation endpoints."""
+    name = configuration(env)
+    authenticated_status(name, env, transport or request_json)
+    # Do not serialize the token, status body, response headers or other remote fields.
+    return "Authentication check succeeded. Store status read; no upload or publication requested."
+
+
 def deploy(action, package, expected_version, env, *, transport=None, sleep=time.sleep, poll_attempts=24):
     if action not in ACTIONS:
         raise StoreError("Invalid action; use upload or submit-release")
@@ -98,16 +120,7 @@ def deploy(action, package, expected_version, env, *, transport=None, sleep=time
         raise StoreError(f"Invalid release package or version: {error}") from None
 
     transport = transport or request_json
-    token_result = transport("https://oauth2.googleapis.com/token", method="POST", data=urllib.parse.urlencode({
-        "client_id": env["CWS_CLIENT_ID"], "client_secret": env["CWS_CLIENT_SECRET"],
-        "refresh_token": env["CWS_REFRESH_TOKEN"], "grant_type": "refresh_token",
-    }).encode(), headers={"Content-Type": "application/x-www-form-urlencoded"})
-    token = token_result.get("access_token")
-    if not isinstance(token, str) or not token:
-        raise StoreError("OAuth did not return an access token; check the configured credentials")
-    headers = {"Authorization": f"Bearer {token}"}
-    status_url = f"{API}/v2/{name}:fetchStatus"
-    status = transport(status_url, headers=headers)
+    headers, status_url, status = authenticated_status(name, env, transport)
     validate_status(status)
     submitted = status.get("submittedItemRevisionStatus", {})
 
@@ -147,12 +160,17 @@ def deploy(action, package, expected_version, env, *, transport=None, sleep=time
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=ACTIONS)
-    parser.add_argument("--package", required=True, type=Path)
-    parser.add_argument("--expected-version", required=True)
+    parser.add_argument("action", choices=("check-auth", *ACTIONS))
+    parser.add_argument("--package", type=Path)
+    parser.add_argument("--expected-version")
     args = parser.parse_args()
+    if args.action != "check-auth" and (args.package is None or args.expected_version is None):
+        parser.error("upload and submit-release require --package and --expected-version")
     try:
-        print(deploy(args.action, args.package, args.expected_version, os.environ))
+        if args.action == "check-auth":
+            print(check_auth(os.environ))
+        else:
+            print(deploy(args.action, args.package, args.expected_version, os.environ))
     except (StoreError, ValueError, KeyError, TypeError) as error:
         # Detailed StoreErrors are safe; unexpected malformed response errors aren't.
         message = str(error) if isinstance(error, StoreError) else "Malformed API response; inspect the Developer Dashboard before retrying"

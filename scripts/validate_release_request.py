@@ -22,6 +22,10 @@ def validate_request(event, ref, action, expected_version, publishing_enabled, m
         action = "submit-release"
     elif event != "workflow_dispatch":
         return "package", manifest_version
+    elif action == "check-auth":
+        if ref != "refs/heads/main":
+            raise ValueError("Authentication checks must be dispatched from main")
+        return "check-auth", manifest_version  # Read-only: no publishing opt-in or release version needed.
     elif action not in {"package", "upload"}:
         raise ValueError("Unknown release action")
     chrome_version(expected_version)

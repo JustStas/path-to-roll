@@ -35,6 +35,17 @@ class ReleaseRequestTests(unittest.TestCase):
         self.assertEqual(validate_request("push", "refs/tags/v1.0.6", "", "", "true", "1.0.6"),
                          ("submit-release", "1.0.6"))
 
+    def test_check_auth_runs_from_main_without_enable_flag_or_expected_version(self):
+        for enabled in ["", None, "false", "true"]:
+            with self.subTest(enabled=enabled):
+                self.assertEqual(validate_request("workflow_dispatch", "refs/heads/main", "check-auth", "",
+                                                  enabled, "1.0.6"), ("check-auth", "1.0.6"))
+
+    def test_check_auth_is_rejected_on_feature_branches_and_tags(self):
+        for ref in ["refs/heads/feature", "refs/tags/v1.0.6"]:
+            with self.subTest(ref=ref), self.assertRaisesRegex(ValueError, "main"):
+                validate_request("workflow_dispatch", ref, "check-auth", "", "", "1.0.6")
+
     def test_tag_must_be_exact_valid_manifest_version_and_enabled(self):
         for ref, enabled in [("refs/tags/v1.0.7", "true"), ("refs/tags/v01.0.6", "true"),
                              ("refs/tags/v1.0.6-beta", "true"), ("refs/tags/v1.0.6/extra", "true"),

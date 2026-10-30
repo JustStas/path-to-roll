@@ -117,6 +117,8 @@ to `main`. Push a version tag matching `manifest.json` on a commit already merge
 into `main` to automatically test, package, upload and submit the release. Google
 publishes it automatically after approval; no second release click is needed.
 Manual `package` previews and draft-only `upload` remain available.
+Use manual `check-auth` from `main` to verify the environment's OAuth credentials
+and read item status while publishing remains disabled; it never uploads or publishes.
 
 See [deployment setup and release instructions](docs/deployment.md) for the required
 GitHub environment, OAuth secrets, publisher/item IDs, version checks and recovery.

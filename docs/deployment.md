@@ -13,7 +13,8 @@ review-status polling job. Google still controls review and can reject a release
 
 Pull requests and ordinary pushes to `main` only run tests and packaging; they do
 not call Google. Manual dispatch remains available for `package` (the default,
-credential-free) and `upload` (a draft only, from `main`).
+credential-free), `check-auth` (read-only, from `main`) and `upload` (a draft only,
+from `main`). The authentication check works with publishing disabled.
 
 ## Release safeguards
 
@@ -56,14 +57,15 @@ command-line arguments.
 4. Add the environment secrets/variables below. The YAML environment name does
    not configure rules; GitHub can otherwise create an unprotected environment
    automatically. [GitHub environment setup](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
-5. After setup, set repository Actions variable `CWS_PUBLISHING_ENABLED` to exactly
-   `true`. Without it, store requests fail before reaching the environment job.
-   Normal CI/package previews still work. The flag is a one-time opt-in, not a
-   per-release button or a replacement for restricted tag access.
+5. Leave repository Actions variable `CWS_PUBLISHING_ENABLED` unset while you
+   verify credentials using `check-auth` below. Uploads/releases require the exact
+   value `true`; normal CI, package previews and read-only credential checks do not.
+   Enable publishing only when you are ready for tagged releases. The flag is a
+   one-time opt-in, not a per-release button or replacement for restricted tag access.
 
 | Kind / location | Name | Value |
 | --- | --- | --- |
-| Repository Actions variable | `CWS_PUBLISHING_ENABLED` | `true` after environment setup |
+| Repository Actions variable | `CWS_PUBLISHING_ENABLED` | Leave unset for check-auth; `true` only when ready to enable releases |
 | Environment variable | `CWS_PUBLISHER_ID` | Developer Dashboard → Publisher → Settings → publisher ID |
 | Environment variable | `CWS_EXTENSION_ID` | Existing listing's 32-letter item ID, also in its store URL |
 | Environment secret | `CWS_CLIENT_ID` | OAuth client ID |
@@ -111,8 +113,35 @@ intervention; ordinary successful releases do not require a dashboard visit.
 
 ## Release procedure
 
+### Verify credentials first, while publishing is disabled
+
+After this workflow has been reviewed and merged into `main`:
+
+1. Keep `CWS_PUBLISHING_ENABLED` unset. Do not create a release tag.
+2. Open **Actions → Chrome extension CI and release → Run workflow**.
+3. Choose branch **`main`**, action **`check-auth`**, and leave **expected_version**
+   blank. Click **Run workflow** when you are ready to perform the credential check.
+4. CI runs first. The separate **Check Chrome Web Store credentials (read-only)**
+   job then uses environment `chrome-web-store` to refresh the OAuth access token
+   and make one official v2 `fetchStatus` GET for the configured publisher/item.
+   It never calls upload, publish or other store mutation methods.
+5. A successful summary says **Authentication check succeeded. Store status read;
+   no upload or publication requested.** Tokens, credentials, raw response bodies
+   and response headers are not logged. A failure reports a sanitized error; resolve
+   the configured credentials/IDs rather than pasting secret values into chat.
+
+This proves that the environment can refresh credentials and read the item. It does
+not prove a package is publishable or that Google will approve a release. An active
+review or upload does not prevent this read-only check. Check-auth does not enable
+publishing or change any configuration. If the action is not available yet, review
+and merge the workflow change first; do not attempt to run it from the PR branch.
+
+### Publish a tagged version after enabling releases
+
 1. Merge the intended code and a higher `manifest.json` version into `main`,
-   including this pipeline before the first automatic release.
+   including this pipeline before the first automatic release. After credentials
+   are verified and you are ready to enable releases, set `CWS_PUBLISHING_ENABLED`
+   to `true` as a separate setup decision.
 2. Push a new matching version tag on that merged commit. For example, **after
    checking the code/version you intend to release**, run:
 
@@ -174,6 +203,7 @@ from identical source/toolchain.
 - **Rollback:** publish a newer version containing the desired earlier code.
   Store versions cannot be downgraded.
 
-The first authenticated store run remains user initiated by pushing a release tag
-after setup. Mock HTTP tests and CI do not validate account credentials or listing
-configuration. Setting up this PR does not itself create a tag or publish a release.
+The first authenticated workflow run can be the user-initiated read-only
+`check-auth` dispatch while publishing stays disabled. Mock HTTP tests and CI do
+not validate actual account credentials or listing configuration. Setting up this
+PR does not itself dispatch check-auth, enable publishing, create a tag or release.
